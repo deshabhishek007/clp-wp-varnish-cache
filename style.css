@@ -65,3 +65,34 @@
   width: 30%;
   font-weight: bold;
 }
+
+/* Connection test result */
+.clp-test-success {
+  color: #1a7e2e;
+  font-weight: 600;
+}
+
+.clp-test-error {
+  color: #b32d2e;
+  font-weight: 600;
+}
+
+/* Purge log status indicators */
+.clp-log-ok {
+  color: #1a7e2e;
+  font-weight: 600;
+}
+
+.clp-log-fail {
+  color: #b32d2e;
+  font-weight: 600;
+}
+
+/* Purge History table */
+.clp-varnish-cache-block-content .wp-list-table {
+  font-size: 13px;
+}
+
+.clp-varnish-cache-block-content input[type=number] {
+  width: 120px;
+}

@@ -1,20 +1,17 @@
 <?php
 
-// Capability check — defence in depth beyond the menu registration
 if (!current_user_can('manage_options')) {
     wp_die(__('You do not have permission to access this page.', 'clp-varnish-cache'));
 }
 
 global $clp_varnish_cache_admin;
-$is_network    = is_multisite() && is_network_admin();
-$successNotice = null;
-$errorNotice   = null;
+$is_network      = is_multisite() && is_network_admin();
+$successNotice   = null;
+$errorNotice     = null;
+$validationErrors = [];
+$host            = wp_parse_url(home_url(), PHP_URL_HOST);
 
-// Use home_url() to avoid HTTP_HOST spoofing
-$host = wp_parse_url(home_url(), PHP_URL_HOST);
-
-// Scoped helper — avoids polluting global function namespace
-$get_post_value = function ($key) {
+$get_post_value = static function (string $key): string {
     return (isset($_POST[$key]) && !empty(sanitize_text_field($_POST[$key])))
         ? sanitize_text_field($_POST[$key])
         : '';
@@ -22,8 +19,10 @@ $get_post_value = function ($key) {
 
 $clp_cache_manager = $clp_varnish_cache_admin->get_clp_cache_manager();
 
+// ── Save Settings ──────────────────────────────────────────────────────────
 if (isset($_POST['action']) && 'save-settings' === sanitize_text_field($_POST['action'])) {
     check_admin_referer('clp-save-settings');
+
     $old_cache_tag_prefix = $clp_cache_manager->get_cache_tag_prefix();
     $enabled              = 1 == $get_post_value('enabled');
     $server               = $get_post_value('server');
@@ -33,7 +32,13 @@ if (isset($_POST['action']) && 'save-settings' === sanitize_text_field($_POST['a
     $excludes             = isset($_POST['excludes']) ? sanitize_textarea_field($_POST['excludes']) : '';
     $excludes             = array_map('trim', array_filter(explode(PHP_EOL, $excludes)));
 
-    if (!empty($server) && !empty($cache_lifetime) && !empty($cache_tag_prefix)) {
+    $validationErrors = ClpVarnishCacheManager::validate_settings([
+        'server'         => $server,
+        'cacheLifetime'  => $cache_lifetime,
+        'cacheTagPrefix' => $cache_tag_prefix,
+    ]);
+
+    if (empty($validationErrors)) {
         $cache_settings = [
             'enabled'        => $enabled,
             'server'         => $server,
@@ -46,20 +51,17 @@ if (isset($_POST['action']) && 'save-settings' === sanitize_text_field($_POST['a
             $clp_cache_manager->write_cache_settings($cache_settings);
             $clp_cache_manager->reset_cache_settings();
             if (!$enabled) {
-                if (!empty($old_cache_tag_prefix)) {
-                    $clp_cache_manager->purge_tag($old_cache_tag_prefix);
-                }
-                if (!empty($host)) {
-                    $clp_cache_manager->purge_host($host);
-                }
+                if (!empty($old_cache_tag_prefix)) $clp_cache_manager->purge_tag($old_cache_tag_prefix);
+                if (!empty($host)) $clp_cache_manager->purge_host($host);
             }
-            $successNotice = 'Settings have been saved.';
+            $successNotice = __('Settings have been saved.', 'clp-varnish-cache');
         } catch (\Exception $e) {
             $errorNotice = $e->getMessage();
         }
     }
 }
 
+// ── Purge Cache ────────────────────────────────────────────────────────────
 if (isset($_POST['action']) && 'purge-cache' === sanitize_text_field($_POST['action'])) {
     check_admin_referer('clp-purge-cache');
     $purge_values = array_map('trim', array_filter(explode(',', $get_post_value('purge-value'))));
@@ -67,43 +69,42 @@ if (isset($_POST['action']) && 'purge-cache' === sanitize_text_field($_POST['act
         try {
             foreach ($purge_values as $purge_value) {
                 if (empty($purge_value)) continue;
-                if (str_starts_with($purge_value, 'http')) {
-                    $clp_cache_manager->purge_url($purge_value);
-                } else {
-                    $clp_cache_manager->purge_tag($purge_value);
-                }
+                str_starts_with($purge_value, 'http')
+                    ? $clp_cache_manager->purge_url($purge_value)
+                    : $clp_cache_manager->purge_tag($purge_value);
             }
-            $successNotice = 'Varnish Cache has been purged.';
+            $successNotice = __('Varnish Cache has been purged.', 'clp-varnish-cache');
         } catch (\Exception $e) {
             $errorNotice = $e->getMessage();
         }
     }
 }
 
+// ── Purge Entire Cache (GET) ───────────────────────────────────────────────
 if (isset($_GET['action']) && 'purge-entire-cache' === sanitize_text_field($_GET['action'])) {
     check_admin_referer('clp-purge-entire-cache');
     try {
-        $cache_tag_prefix = $clp_cache_manager->get_cache_tag_prefix();
-        if (!empty($host) && !empty($cache_tag_prefix)) {
-            $clp_cache_manager->purge_host_and_tag($host, $cache_tag_prefix);
+        $prefix = $clp_cache_manager->get_cache_tag_prefix();
+        if (!empty($host) && !empty($prefix)) {
+            $clp_cache_manager->purge_host_and_tag($host, $prefix);
         } elseif (!empty($host)) {
             $clp_cache_manager->purge_host($host);
-        } elseif (!empty($cache_tag_prefix)) {
-            $clp_cache_manager->purge_tag($cache_tag_prefix);
+        } elseif (!empty($prefix)) {
+            $clp_cache_manager->purge_tag($prefix);
         }
-        $successNotice = 'Varnish Cache has been purged.';
+        $successNotice = __('Varnish Cache has been purged.', 'clp-varnish-cache');
     } catch (\Exception $e) {
         $errorNotice = $e->getMessage();
     }
 }
 
-$clp_cache_settings = $clp_cache_manager->get_cache_settings();
-$is_enabled         = $clp_cache_manager->is_enabled();
-$server             = $clp_cache_manager->get_server();
-$cache_lifetime     = $clp_cache_manager->get_cache_lifetime();
-$cache_tag_prefix   = $clp_cache_manager->get_cache_tag_prefix();
-$excluded_params    = $clp_cache_manager->get_excluded_params();
-$excludes           = $clp_cache_manager->get_excludes();
+$clp_cache_settings    = $clp_cache_manager->get_cache_settings();
+$is_enabled            = $clp_cache_manager->is_enabled();
+$server                = $clp_cache_manager->get_server();
+$cache_lifetime        = $clp_cache_manager->get_cache_lifetime();
+$cache_tag_prefix      = $clp_cache_manager->get_cache_tag_prefix();
+$excluded_params       = $clp_cache_manager->get_excluded_params();
+$excludes              = $clp_cache_manager->get_excludes();
 
 $settings_url          = $is_network
     ? network_admin_url('settings.php?page=clp-varnish-cache')
@@ -112,23 +113,39 @@ $purge_entire_cache_url = wp_nonce_url(
     add_query_arg('action', 'purge-entire-cache', $settings_url),
     'clp-purge-entire-cache'
 );
+$purge_log             = ClpVarnishCacheLogger::get_log();
 
 ?>
 <h1 id="clp-varnish-cache"><?php esc_html_e('CLP Varnish Cache', 'clp-varnish-cache'); ?></h1>
 
 <div class="clp-varnish-cache-container">
   <?php if (!empty($clp_cache_settings)): ?>
+
     <?php if (!is_null($successNotice)): ?>
       <div id="notice" class="notice notice-success fade is-dismissible">
-        <p><strong><?php echo esc_html__($successNotice, 'clp-varnish-cache'); ?></strong></p>
+        <p><strong><?php echo esc_html($successNotice); ?></strong></p>
       </div>
     <?php endif; ?>
+
     <?php if (!is_null($errorNotice)): ?>
       <div id="notice" class="notice notice-error fade is-dismissible">
         <p><strong><?php echo esc_html($errorNotice); ?></strong></p>
       </div>
     <?php endif; ?>
+
+    <?php if (!empty($validationErrors)): ?>
+      <div id="notice" class="notice notice-error fade is-dismissible">
+        <ul>
+          <?php foreach ($validationErrors as $err): ?>
+            <li><strong><?php echo esc_html($err); ?></strong></li>
+          <?php endforeach; ?>
+        </ul>
+      </div>
+    <?php endif; ?>
+
     <div class="clp-varnish-cache-block-container">
+
+      <!-- Settings form -->
       <form action="<?php echo esc_url($settings_url); ?>" method="post">
         <?php wp_nonce_field('clp-save-settings'); ?>
         <div class="clp-varnish-cache-block">
@@ -139,54 +156,48 @@ $purge_entire_cache_url = wp_nonce_url(
             <table class="form-table">
               <tbody>
                 <tr>
-                  <td class="field-name">
-                    <?php esc_html_e('Enable Varnish Cache', 'clp-varnish-cache'); ?>:
-                  </td>
+                  <td class="field-name"><?php esc_html_e('Enable Varnish Cache', 'clp-varnish-cache'); ?>:</td>
                   <td>
-                    <input type="checkbox" name="enabled" <?php echo ($is_enabled ? 'checked' : ''); ?> value="1" />
+                    <input type="checkbox" name="enabled" <?php checked($is_enabled); ?> value="1" />
                   </td>
                 </tr>
                 <tr>
-                  <td class="field-name">
-                    <?php esc_html_e('Varnish Server', 'clp-varnish-cache'); ?>:
-                  </td>
+                  <td class="field-name"><?php esc_html_e('Varnish Server', 'clp-varnish-cache'); ?>:</td>
                   <td>
-                    <input type="text" name="server" required="required" value="<?php echo esc_attr($server); ?>" />
+                    <input type="text" name="server" required="required" value="<?php echo esc_attr($server); ?>" placeholder="127.0.0.1:6081" />
+                    <button type="button" id="clp-varnish-test-connection" class="button" style="margin-left:8px;">
+                      <?php esc_html_e('Test Connection', 'clp-varnish-cache'); ?>
+                    </button>
+                    <span id="clp-varnish-test-result" style="margin-left:8px;vertical-align:middle;"></span>
+                    <p class="description"><?php esc_html_e('Format: hostname:port or IP:port (e.g. 127.0.0.1:6081)', 'clp-varnish-cache'); ?></p>
                   </td>
                 </tr>
                 <tr>
-                  <td class="field-name">
-                    <?php esc_html_e('Cache Lifetime', 'clp-varnish-cache'); ?>:
-                  </td>
+                  <td class="field-name"><?php esc_html_e('Cache Lifetime', 'clp-varnish-cache'); ?>:</td>
                   <td>
-                    <input type="text" name="cache-lifetime" required="required" value="<?php echo esc_attr($cache_lifetime); ?>" />
-                    <p class="description"><?php esc_html_e('Cache Lifetime in seconds before being refreshed.', 'clp-varnish-cache'); ?></p>
+                    <input type="number" name="cache-lifetime" required="required" min="1" value="<?php echo esc_attr($cache_lifetime); ?>" />
+                    <p class="description"><?php esc_html_e('Seconds before cached content is refreshed.', 'clp-varnish-cache'); ?></p>
                   </td>
                 </tr>
                 <tr>
-                  <td class="field-name">
-                    <?php esc_html_e('Cache Tag Prefix', 'clp-varnish-cache'); ?>:
-                  </td>
+                  <td class="field-name"><?php esc_html_e('Cache Tag Prefix', 'clp-varnish-cache'); ?>:</td>
                   <td>
-                    <input type="text" name="cache-tag-prefix" required="required" value="<?php echo esc_attr($cache_tag_prefix); ?>" />
+                    <input type="text" name="cache-tag-prefix" required="required" value="<?php echo esc_attr($cache_tag_prefix); ?>" pattern="[a-zA-Z0-9_\-]+" />
+                    <p class="description"><?php esc_html_e('Letters, numbers, hyphens, and underscores only.', 'clp-varnish-cache'); ?></p>
                   </td>
                 </tr>
                 <tr>
-                  <td class="field-name">
-                    <?php esc_html_e('Excluded Params', 'clp-varnish-cache'); ?>:
-                  </td>
+                  <td class="field-name"><?php esc_html_e('Excluded Params', 'clp-varnish-cache'); ?>:</td>
                   <td>
                     <input type="text" name="excluded-params" value="<?php echo esc_attr($excluded_params); ?>" />
-                    <p class="description"><?php esc_html_e('List of GET parameters, separated by a comma, to disable caching.', 'clp-varnish-cache'); ?></p>
+                    <p class="description"><?php esc_html_e('GET parameters that bypass caching, comma-separated.', 'clp-varnish-cache'); ?></p>
                   </td>
                 </tr>
                 <tr>
-                  <td class="field-name">
-                    <?php esc_html_e('Excludes', 'clp-varnish-cache'); ?>:
-                  </td>
+                  <td class="field-name"><?php esc_html_e('Excludes', 'clp-varnish-cache'); ?>:</td>
                   <td>
                     <textarea name="excludes" rows="6"><?php echo esc_textarea($excludes); ?></textarea>
-                    <p class="description"><?php esc_html_e('Urls and files that Varnish Cache shouldn\'t cache.', 'clp-varnish-cache'); ?></p>
+                    <p class="description"><?php esc_html_e('URLs and paths that Varnish should not cache, one per line.', 'clp-varnish-cache'); ?></p>
                   </td>
                 </tr>
               </tbody>
@@ -196,6 +207,8 @@ $purge_entire_cache_url = wp_nonce_url(
           </div>
         </div>
       </form>
+
+      <!-- Purge Cache form -->
       <form action="<?php echo esc_url($settings_url); ?>" method="post">
         <?php wp_nonce_field('clp-purge-cache'); ?>
         <div class="clp-varnish-cache-block">
@@ -210,8 +223,8 @@ $purge_entire_cache_url = wp_nonce_url(
               <tbody>
                 <tr>
                   <td>
-                    <input type="text" name="purge-value" required="required" class="purge-value" placeholder="https://www.domain.com/site.html">
-                    <p class="description"><?php esc_html_e('You can purge single urls or tags separated by comma.', 'clp-varnish-cache'); ?></p>
+                    <input type="text" name="purge-value" required="required" class="purge-value" placeholder="https://www.domain.com/page/ or cache-tag" />
+                    <p class="description"><?php esc_html_e('Purge a URL (starting with http) or a cache tag. Separate multiple values with a comma.', 'clp-varnish-cache'); ?></p>
                   </td>
                 </tr>
               </tbody>
@@ -221,6 +234,55 @@ $purge_entire_cache_url = wp_nonce_url(
           </div>
         </div>
       </form>
+
+      <!-- Purge History Log -->
+      <?php if (!empty($purge_log)): ?>
+      <div class="clp-varnish-cache-block">
+        <div class="clp-varnish-cache-block-header">
+          <h3><?php esc_html_e('Purge History', 'clp-varnish-cache'); ?></h3>
+        </div>
+        <div class="clp-varnish-cache-block-content">
+          <table class="wp-list-table widefat fixed striped">
+            <thead>
+              <tr>
+                <th><?php esc_html_e('Time', 'clp-varnish-cache'); ?></th>
+                <th><?php esc_html_e('Type', 'clp-varnish-cache'); ?></th>
+                <th><?php esc_html_e('Target', 'clp-varnish-cache'); ?></th>
+                <th><?php esc_html_e('Status', 'clp-varnish-cache'); ?></th>
+                <th><?php esc_html_e('Message', 'clp-varnish-cache'); ?></th>
+              </tr>
+            </thead>
+            <tbody>
+              <?php foreach ($purge_log as $entry): ?>
+              <tr>
+                <td><?php echo esc_html($entry['time']); ?></td>
+                <td><?php echo esc_html($entry['type']); ?></td>
+                <td style="word-break:break-all;"><?php echo esc_html($entry['target']); ?></td>
+                <td>
+                  <?php if ($entry['success']): ?>
+                    <span class="clp-log-ok">&#10003; OK</span>
+                  <?php else: ?>
+                    <span class="clp-log-fail">&#10007; Failed</span>
+                  <?php endif; ?>
+                </td>
+                <td><?php echo esc_html($entry['message']); ?></td>
+              </tr>
+              <?php endforeach; ?>
+            </tbody>
+          </table>
+          <p class="description" style="margin-top:8px;">
+            <?php printf(
+                /* translators: %d: number of entries */
+                esc_html__('Showing last %d purge operations. Use WP-CLI %s to clear.', 'clp-varnish-cache'),
+                count($purge_log),
+                '<code>wp varnish clear-log</code>'
+            ); ?>
+          </p>
+        </div>
+      </div>
+      <?php endif; ?>
+
+      <!-- Support -->
       <div class="clp-varnish-cache-block">
         <div class="clp-varnish-cache-block-header">
           <h3><?php esc_html_e('Support', 'clp-varnish-cache'); ?></h3>
@@ -229,29 +291,22 @@ $purge_entire_cache_url = wp_nonce_url(
           <table class="form-table">
             <tbody>
               <tr>
-                <td class="field-name">
-                  <?php esc_html_e('Documentation', 'clp-varnish-cache'); ?>:
-                </td>
-                <td>
-                  <a target="_blank" href="https://www.cloudpanel.io/docs/v2/frontend-area/varnish-cache/wordpress/plugin/">https://www.cloudpanel.io/docs/v2/frontend-area/varnish-cache/wordpress/plugin/</a>
-                </td>
+                <td class="field-name"><?php esc_html_e('Documentation', 'clp-varnish-cache'); ?>:</td>
+                <td><a target="_blank" href="https://www.cloudpanel.io/docs/v2/frontend-area/varnish-cache/wordpress/plugin/">https://www.cloudpanel.io/docs/v2/frontend-area/varnish-cache/wordpress/plugin/</a></td>
               </tr>
               <tr>
-                <td class="field-name">
-                  <?php esc_html_e('Discord', 'clp-varnish-cache'); ?>:
-                </td>
-                <td>
-                  <a target="_blank" href="https://discord.cloudpanel.io/">https://discord.cloudpanel.io/</a>
-                </td>
+                <td class="field-name"><?php esc_html_e('Discord', 'clp-varnish-cache'); ?>:</td>
+                <td><a target="_blank" href="https://discord.cloudpanel.io/">https://discord.cloudpanel.io/</a></td>
               </tr>
             </tbody>
           </table>
         </div>
       </div>
+
     </div>
   <?php else: ?>
     <div id="notice" class="notice notice-error fade is-dismissible">
-      <p><strong><?php echo esc_html__('Settings File Not Found!', 'clp-varnish-cache'); ?></strong></p>
+      <p><strong><?php esc_html_e('Settings File Not Found!', 'clp-varnish-cache'); ?></strong></p>
     </div>
   <?php endif; ?>
 </div>

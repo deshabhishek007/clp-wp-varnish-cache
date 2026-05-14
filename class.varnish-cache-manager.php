@@ -2,61 +2,59 @@
 
 class ClpVarnishCacheManager {
 
-    private $cache_settings = [];
-    private $settings_file;
+    private array $cache_settings = [];
+    private string $settings_file;
 
     public function __construct() {
-        // Cache the path once — avoids repeated getenv() syscalls
         $this->settings_file = sprintf('%s/.varnish-cache/settings.json', rtrim(getenv('HOME'), '/'));
     }
 
-    public function is_enabled() {
+    public function is_enabled(): bool {
         $settings = $this->get_cache_settings();
         return isset($settings['enabled']) && true === $settings['enabled'];
     }
 
-    public function get_server() {
+    public function get_server(): string {
         $settings = $this->get_cache_settings();
-        return isset($settings['server']) ? $settings['server'] : '';
+        return $settings['server'] ?? '';
     }
 
-    public function get_cache_lifetime() {
+    public function get_cache_lifetime(): string {
         $settings = $this->get_cache_settings();
-        return isset($settings['cacheLifetime']) ? $settings['cacheLifetime'] : '';
+        return $settings['cacheLifetime'] ?? '';
     }
 
-    public function get_cache_tag_prefix() {
+    public function get_cache_tag_prefix(): string {
         $settings = $this->get_cache_settings();
-        return isset($settings['cacheTagPrefix']) ? $settings['cacheTagPrefix'] : '';
+        return $settings['cacheTagPrefix'] ?? '';
     }
 
-    public function get_excluded_params() {
-        $settings = $this->get_cache_settings();
+    public function get_excluded_params(): string {
+        $settings        = $this->get_cache_settings();
         $excluded_params = isset($settings['excludedParams']) ? (array) $settings['excludedParams'] : [];
         return implode(',', $excluded_params);
     }
 
-    public function get_excludes() {
+    public function get_excludes(): string {
         $settings = $this->get_cache_settings();
         $excludes = isset($settings['excludes']) ? (array) $settings['excludes'] : [];
         return implode(PHP_EOL, $excludes);
     }
 
-    public function get_cache_settings() {
+    public function get_cache_settings(): array {
         if (!empty($this->cache_settings)) {
             return $this->cache_settings;
         }
 
-        // Share settings across multiple ClpVarnishCacheManager instances in the same request
         $cached = wp_cache_get('clp_varnish_settings', 'clp_varnish');
         if (false !== $cached) {
-            $this->cache_settings = $cached;
+            $this->cache_settings = (array) $cached;
             return $this->cache_settings;
         }
 
         if (file_exists($this->settings_file)) {
             $json           = file_get_contents($this->settings_file);
-            $cache_settings = json_decode($json, true);
+            $cache_settings = json_decode((string) $json, true);
             if (JSON_ERROR_NONE !== json_last_error()) {
                 error_log(sprintf('CLP Varnish Cache: failed to parse settings.json — %s', json_last_error_msg()));
             } elseif (!empty($cache_settings)) {
@@ -68,7 +66,7 @@ class ClpVarnishCacheManager {
         return $this->cache_settings;
     }
 
-    public function write_cache_settings(array $settings) {
+    public function write_cache_settings(array $settings): void {
         $json   = json_encode($settings, JSON_PRETTY_PRINT);
         $result = file_put_contents($this->settings_file, $json);
         if (false === $result) {
@@ -79,73 +77,120 @@ class ClpVarnishCacheManager {
         wp_cache_delete('clp_varnish_settings', 'clp_varnish');
     }
 
-    public function reset_cache_settings() {
+    public function reset_cache_settings(): void {
         $this->cache_settings = [];
         wp_cache_delete('clp_varnish_settings', 'clp_varnish');
     }
 
-    public function purge_host($host): void {
-        $this->purge(['Host' => $host]);
+    /**
+     * Validate settings values before saving. Returns an array of error strings (empty = valid).
+     */
+    public static function validate_settings(array $settings): array {
+        $errors = [];
+
+        $server = $settings['server'] ?? '';
+        if (empty($server)) {
+            $errors[] = __('Varnish Server is required.', 'clp-varnish-cache');
+        } elseif (!preg_match('/^[a-zA-Z0-9.\-_]+(:\d{1,5})?$/', $server)) {
+            $errors[] = __('Varnish Server must be in hostname:port or IP:port format (e.g. 127.0.0.1:6081).', 'clp-varnish-cache');
+        } elseif (str_contains($server, ':')) {
+            $port = (int) explode(':', $server, 2)[1];
+            if ($port < 1 || $port > 65535) {
+                $errors[] = __('Varnish Server port must be between 1 and 65535.', 'clp-varnish-cache');
+            }
+        }
+
+        $lifetime = (string) ($settings['cacheLifetime'] ?? '');
+        if ('' === $lifetime) {
+            $errors[] = __('Cache Lifetime is required.', 'clp-varnish-cache');
+        } elseif (!ctype_digit($lifetime) || (int) $lifetime <= 0) {
+            $errors[] = __('Cache Lifetime must be a positive integer (seconds).', 'clp-varnish-cache');
+        }
+
+        $prefix = $settings['cacheTagPrefix'] ?? '';
+        if (empty($prefix)) {
+            $errors[] = __('Cache Tag Prefix is required.', 'clp-varnish-cache');
+        } elseif (!preg_match('/^[a-zA-Z0-9_-]+$/', $prefix)) {
+            $errors[] = __('Cache Tag Prefix may only contain letters, numbers, hyphens, and underscores.', 'clp-varnish-cache');
+        }
+
+        return $errors;
     }
 
-    public function purge_tag($tag): void {
+    /**
+     * Test connectivity to a Varnish server. Returns true on success or an error string.
+     */
+    public function test_connection(string $server): true|string {
+        if (empty($server)) {
+            return __('No server address configured.', 'clp-varnish-cache');
+        }
+        $url      = 'http://' . preg_replace('#^https?://#', '', $server);
+        $host     = wp_parse_url(home_url(), PHP_URL_HOST);
+        $response = wp_remote_request($url, [
+            'method'    => 'PURGE',
+            'timeout'   => 3,
+            'sslverify' => false,
+            'headers'   => ['Host' => $host],
+        ]);
+        if (is_wp_error($response)) {
+            return $response->get_error_message();
+        }
+        $code = (int) wp_remote_retrieve_response_code($response);
+        if (200 === $code) {
+            return true;
+        }
+        return sprintf(__('Unexpected HTTP %d response from Varnish server.', 'clp-varnish-cache'), $code);
+    }
+
+    public function purge_host(string $host): void {
+        $this->purge(['Host' => $host], null, 'host', $host);
+    }
+
+    public function purge_tag(string $tag): void {
         $this->purge_tags([$tag]);
     }
 
     public function purge_tags(array $tags): void {
-        $this->purge(['X-Cache-Tags' => implode(',', $tags)]);
+        $target = implode(',', $tags);
+        $this->purge(['X-Cache-Tags' => $target], null, 'tag', $target);
     }
 
-    // Send a single PURGE request carrying both Host and X-Cache-Tags headers
-    public function purge_host_and_tag($host, $tag): void {
-        $this->purge([
-            'Host'        => $host,
-            'X-Cache-Tags' => $tag,
-        ]);
+    public function purge_host_and_tag(string $host, string $tag): void {
+        $this->purge(['Host' => $host, 'X-Cache-Tags' => $tag], null, 'host+tag', "$host / $tag");
     }
 
-    public function purge_url($url): void {
-        $parsed_url = parse_url($url);
+    public function purge_url(string $url): void {
+        $parsed = parse_url($url);
 
-        if (!isset($parsed_url['host'])) {
-            throw new \InvalidArgumentException(sprintf('Not a valid url: %s', $url));
+        if (!isset($parsed['host'])) {
+            throw new \InvalidArgumentException(sprintf('Not a valid URL: %s', $url));
         }
 
-        // Prevent purging URLs for hosts other than the current site
         $site_host = wp_parse_url(home_url(), PHP_URL_HOST);
-        if ($parsed_url['host'] !== $site_host) {
+        if ($parsed['host'] !== $site_host) {
             throw new \InvalidArgumentException(
-                sprintf('URL host "%s" does not match site host "%s"', $parsed_url['host'], $site_host)
+                sprintf('URL host "%s" does not match site host "%s"', $parsed['host'], $site_host)
             );
         }
 
         $request_url = $this->get_server();
-
-        if (isset($parsed_url['path'])) {
-            $path        = $parsed_url['path'];
+        if (isset($parsed['path'])) {
+            $path        = $parsed['path'];
             $request_url = sprintf('%s/%s', $request_url, ('/' === $path ? '' : ltrim($path, '/')));
         }
-
-        // Reuse the already-parsed query instead of calling parse_url() a second time
-        if (!empty($parsed_url['query'])) {
-            parse_str($parsed_url['query'], $query_params);
+        if (!empty($parsed['query'])) {
+            parse_str($parsed['query'], $query_params);
             if (!empty($query_params)) {
                 $request_url = sprintf('%s?%s', $request_url, http_build_query($query_params));
             }
         }
 
-        $this->purge(['Host' => $parsed_url['host']], $request_url);
+        $this->purge(['Host' => $parsed['host']], $request_url, 'url', $url);
     }
 
-    private function purge(array $headers, $request_url = null): void {
-        if (is_null($request_url)) {
-            $request_url = $this->get_server();
-        }
-
-        // Strip any existing scheme before prepending http:// to avoid double-protocol
-        $request_url = 'http://' . preg_replace('#^https?://#', '', $request_url);
-
-        $response = wp_remote_request($request_url, [
+    private function purge(array $headers, ?string $request_url, string $log_type, string $log_target): void {
+        $url      = 'http://' . preg_replace('#^https?://#', '', $request_url ?? $this->get_server());
+        $response = wp_remote_request($url, [
             'sslverify' => false,
             'method'    => 'PURGE',
             'timeout'   => 2,
@@ -153,14 +198,18 @@ class ClpVarnishCacheManager {
         ]);
 
         if (is_wp_error($response)) {
-            throw new \RuntimeException(
-                sprintf('Varnish purge request failed: %s', $response->get_error_message())
-            );
+            $message = $response->get_error_message();
+            ClpVarnishCacheLogger::log($log_type, $log_target, false, $message);
+            throw new \RuntimeException(sprintf('Varnish purge request failed: %s', $message));
         }
 
         $http_status_code = (int) wp_remote_retrieve_response_code($response);
         if (200 !== $http_status_code) {
+            $message = sprintf('HTTP %d', $http_status_code);
+            ClpVarnishCacheLogger::log($log_type, $log_target, false, $message);
             throw new \RuntimeException(sprintf('Varnish purge returned HTTP %d', $http_status_code));
         }
+
+        ClpVarnishCacheLogger::log($log_type, $log_target, true);
     }
 }
