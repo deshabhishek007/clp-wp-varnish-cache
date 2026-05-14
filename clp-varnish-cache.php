@@ -19,13 +19,15 @@ if (false ===  function_exists('add_action')) {
 }
 
 define('CLP_VARNISH_VERSION', '1.1.0');
-$is_admin = is_admin();
+define('CLP_VARNISH_PLUGIN_DIR', plugin_dir_path(__FILE__));
 
-if (true === $is_admin) {
-    define('CLP_VARNISH_PLUGIN_DIR', plugin_dir_path( __FILE__));
-    require_once CLP_VARNISH_PLUGIN_DIR . 'class.varnish-cache-manager.php';
+require_once CLP_VARNISH_PLUGIN_DIR . 'class.varnish-cache-manager.php';
+require_once CLP_VARNISH_PLUGIN_DIR . 'class.varnish-cache-auto-purge.php';
+
+// Auto-purge loads on every request so save_post / comment hooks fire on REST and CLI too
+$clp_varnish_cache_auto_purge = new ClpVarnishCacheAutoPurge();
+
+if (is_admin()) {
     require_once CLP_VARNISH_PLUGIN_DIR . 'class.varnish-cache-admin.php';
-    require_once CLP_VARNISH_PLUGIN_DIR . 'class.varnish-cache-auto-purge.php';
-    $clp_varnish_cache_auto_purge = new ClpVarnishCacheAutoPurge();
     $clp_varnish_cache_admin = new ClpVarnishCacheAdmin();
 }
