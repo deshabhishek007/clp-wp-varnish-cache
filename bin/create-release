@@ -1,42 +1,90 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -euo pipefail
 
+# ── Colours ───────────────────────────────────────────────────────────────────
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'
 YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
+NC='\033[0m'
 
-echo -e "${BLUE}===> Starting Build Process...${NC}"
+# ── Resolve repository root regardless of where the script is called from ─────
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+BIN_DIR="$SCRIPT_DIR"
+TMP_DIR="$BIN_DIR/tmp"
+PLUGIN_FILE="$REPO_ROOT/clp-varnish-cache.php"
+README_FILE="$REPO_ROOT/readme.txt"
+CHANGELOG_FILE="$REPO_ROOT/changelog"
 
-VERSION=$(grep "define('CLP_VARNISH_VERSION'" ../clp-varnish-cache.php | awk -F"'" '{print $4}')
+# ── Helpers ───────────────────────────────────────────────────────────────────
+info()    { echo -e "${BLUE}===> $*${NC}"; }
+success() { echo -e "${GREEN}✔ $*${NC}"; }
+error()   { echo -e "${RED}✖ Error: $*${NC}" >&2; exit 1; }
 
-if [ -z "$VERSION" ]; then
-    echo -e "${RED}✖ Error: Could not find CLP_VARNISH_VERSION in ../clp-varnish-cache.php${NC}"
-    exit 1
+# ── Read version from main plugin file ────────────────────────────────────────
+info "Reading version..."
+VERSION=$(grep "define('CLP_VARNISH_VERSION'" "$PLUGIN_FILE" | awk -F"'" '{print $4}')
+[[ -z "$VERSION" ]] && error "Could not find CLP_VARNISH_VERSION in clp-varnish-cache.php"
+success "Plugin version: ${YELLOW}$VERSION"
+
+# ── Verify version consistency across all three sources ───────────────────────
+info "Checking version consistency..."
+
+README_VERSION=$(grep "^Stable tag:" "$README_FILE" | awk '{print $NF}')
+[[ "$README_VERSION" != "$VERSION" ]] && \
+    error "readme.txt Stable tag ($README_VERSION) does not match plugin version ($VERSION)"
+
+if [[ -f "$CHANGELOG_FILE" ]]; then
+    CHANGELOG_VERSION=$(grep -m1 "^[0-9]" "$CHANGELOG_FILE" | awk '{print $1}')
+    [[ "$CHANGELOG_VERSION" != "$VERSION" ]] && \
+        error "changelog top entry ($CHANGELOG_VERSION) does not match plugin version ($VERSION)"
 fi
 
-echo -e "${GREEN}✔ Found Version: ${YELLOW}$VERSION${NC}\n"
+success "All version references agree: $VERSION"
 
-echo -e "${BLUE}===> Preparing temporary directories...${NC}"
-TMP_DIRECTORY='tmp'
-TMP_RELEASE_DIRECTORY='tmp/clp-varnish-cache/'
+# ── Ensure working tree is clean ──────────────────────────────────────────────
+info "Checking git working tree..."
+cd "$REPO_ROOT"
+if [[ -n "$(git status --porcelain)" ]]; then
+    error "Working tree has uncommitted changes. Commit or stash them before releasing."
+fi
+success "Working tree is clean"
 
-rm -rf $TMP_DIRECTORY
-mkdir -p $TMP_RELEASE_DIRECTORY
+# ── Create git tag ────────────────────────────────────────────────────────────
+TAG="v$VERSION"
+info "Creating git tag $TAG..."
+if git rev-parse "$TAG" >/dev/null 2>&1; then
+    echo -e "${YELLOW}  Tag $TAG already exists — skipping tag creation${NC}"
+else
+    git tag -a "$TAG" -m "Release $TAG"
+    success "Created tag $TAG"
+    echo -e "  Run ${YELLOW}git push origin $TAG${NC} to publish the release."
+fi
 
-# Copy files & silence the "cannot copy directory into itself" error
-cp -R ../* $TMP_RELEASE_DIRECTORY 2>/dev/null
+# ── Build zip ─────────────────────────────────────────────────────────────────
+info "Preparing build directory..."
+TMP_PLUGIN_DIR="$TMP_DIR/clp-varnish-cache"
+rm -rf "$TMP_DIR"
+mkdir -p "$TMP_PLUGIN_DIR"
 
-rm -rf $TMP_RELEASE_DIRECTORY/bin/
-rm -rf $TMP_RELEASE_DIRECTORY/release/
-rm -f $TMP_RELEASE_DIRECTORY/languages/*.po~ 2>/dev/null
+# Copy all non-dot files from repo root
+cp -R "$REPO_ROOT"/[^.]* "$TMP_PLUGIN_DIR/" 2>/dev/null || true
 
-echo -e "${BLUE}===> Creating zip archive...${NC}"
-cd $TMP_DIRECTORY
+# Strip development-only artifacts — not needed in the installed plugin
+rm -rf  "$TMP_PLUGIN_DIR/bin"
+rm -rf  "$TMP_PLUGIN_DIR/release"
+rm -f   "$TMP_PLUGIN_DIR/README.md"
+rm -f   "$TMP_PLUGIN_DIR/changelog"
+find    "$TMP_PLUGIN_DIR/languages" -name "*.po~" -delete 2>/dev/null || true
 
-# '-q' (quiet) flag to stop 'zip' from spamming the console
-zip -qr "clp-varnish-cache-$VERSION.zip" clp-varnish-cache
+info "Creating zip archive..."
+ZIP_NAME="clp-varnish-cache-$VERSION.zip"
+cd "$TMP_DIR"
+zip -qr "$ZIP_NAME" clp-varnish-cache
 rm -rf clp-varnish-cache
 
-echo -e "\n${GREEN}✔ Success! Release packaged successfully.${NC}"
-echo -e "📁 ${YELLOW}bin/tmp/clp-varnish-cache-$VERSION.zip${NC}\n"
+echo ""
+success "Release packaged successfully."
+echo -e "   ${YELLOW}$TMP_DIR/$ZIP_NAME${NC}"
+echo ""

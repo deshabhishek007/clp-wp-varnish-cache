@@ -1,0 +1,94 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: Build & publish release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Read version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Verify plugin version matches tag
+        run: |
+          PLUGIN_VER=$(grep "define('CLP_VARNISH_VERSION'" clp-varnish-cache.php | awk -F"'" '{print $4}')
+          README_VER=$(grep "^Stable tag:" readme.txt | awk '{print $NF}')
+          TAG_VER="${{ steps.version.outputs.VERSION }}"
+
+          echo "Tag version    : $TAG_VER"
+          echo "Plugin version : $PLUGIN_VER"
+          echo "Readme version : $README_VER"
+
+          if [[ "$PLUGIN_VER" != "$TAG_VER" ]]; then
+            echo "::error::clp-varnish-cache.php version ($PLUGIN_VER) does not match tag ($TAG_VER)"
+            exit 1
+          fi
+          if [[ "$README_VER" != "$TAG_VER" ]]; then
+            echo "::error::readme.txt Stable tag ($README_VER) does not match tag ($TAG_VER)"
+            exit 1
+          fi
+
+      - name: Build zip
+        run: |
+          VERSION="${{ steps.version.outputs.VERSION }}"
+          PLUGIN_DIR="clp-varnish-cache"
+          ZIP_NAME="clp-varnish-cache-${VERSION}.zip"
+
+          mkdir -p "build/$PLUGIN_DIR"
+          # Copy non-dotfile entries
+          cp -R [^.]* "build/$PLUGIN_DIR/" 2>/dev/null || true
+
+          # Strip development-only artifacts
+          rm -rf "build/$PLUGIN_DIR/bin"
+          rm -rf "build/$PLUGIN_DIR/release"
+          rm -f  "build/$PLUGIN_DIR/README.md"
+          rm -f  "build/$PLUGIN_DIR/changelog"
+          find   "build/$PLUGIN_DIR/languages" -name "*.po~" -delete 2>/dev/null || true
+
+          cd build
+          zip -qr "$ZIP_NAME" "$PLUGIN_DIR"
+          echo "ZIP_PATH=$(pwd)/$ZIP_NAME" >> "$GITHUB_ENV"
+
+      - name: Extract changelog for this release
+        id: changelog
+        run: |
+          VERSION="${{ steps.version.outputs.VERSION }}"
+          # Grab lines from the first matching version header until the next one
+          NOTES=$(awk "/^$VERSION /{found=1; next} found && /^[0-9]+\.[0-9]+/{exit} found{print}" changelog)
+          # Pass multi-line output safely via $GITHUB_OUTPUT
+          {
+            echo "NOTES<<EOF"
+            echo "$NOTES"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "v${{ steps.version.outputs.VERSION }}"
+          body: ${{ steps.changelog.outputs.NOTES }}
+          files: ${{ env.ZIP_PATH }}
+          fail_on_unmatched_files: true
+
+      # ── WordPress.org SVN deployment (optional) ──────────────────────────
+      # Uncomment and add WP_SVN_USERNAME / WP_SVN_PASSWORD as repository
+      # secrets to deploy automatically to the WordPress.org plugin directory.
+      #
+      # - name: Deploy to WordPress.org
+      #   uses: 10up/action-wordpress-plugin-deploy@stable
+      #   env:
+      #     SVN_PASSWORD: ${{ secrets.WP_SVN_PASSWORD }}
+      #     SVN_USERNAME: ${{ secrets.WP_SVN_USERNAME }}
+      #     SLUG: clp-varnish-cache
