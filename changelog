@@ -1,3 +1,9 @@
+1.1.4 Abhishek Deshpande <abhishek@whoisabhi.com> Thu, 15 May 2026 00:00:00
+- Fix full cache purge sending X-Purge-All: true instead of tag-only ban
+- Fix success notice not showing after Purge Cache and Save Settings actions
+- Add Clear Log button to Purge History panel (no longer requires WP-CLI)
+- Convert all settings page actions to Post-Redirect-Get pattern
+
 1.1.3 Abhishek Deshpande <abhishek@whoisabhi.com> Thu, 15 May 2026 00:00:00
 - Fix post purge not invalidating article pages on tag-based VCL configurations
 - Add X-Cache-Tags: {prefix}-post-{ID} purge signal on save_post (matches original CLP plugin behaviour)
