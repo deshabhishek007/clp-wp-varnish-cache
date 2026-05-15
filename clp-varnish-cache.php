@@ -54,15 +54,7 @@ register_deactivation_hook(__FILE__, static function (): void {
     if (!$manager->is_enabled()) return;
 
     try {
-        $host   = wp_parse_url(home_url(), PHP_URL_HOST);
-        $prefix = $manager->get_cache_tag_prefix();
-        if (!empty($host) && !empty($prefix)) {
-            $manager->purge_host_and_tag($host, $prefix);
-        } elseif (!empty($host)) {
-            $manager->purge_host($host);
-        } elseif (!empty($prefix)) {
-            $manager->purge_tag($prefix);
-        }
+        $manager->purge_everything();
     } catch (\Exception $e) {
         error_log(sprintf('CLP Varnish Cache: deactivation purge failed — %s', $e->getMessage()));
     }

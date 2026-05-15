@@ -30,16 +30,8 @@ class ClpVarnishCacheAdmin {
         if (!current_user_can('manage_options')) return;
         if (!isset($_GET['_wpnonce']) || !wp_verify_nonce(sanitize_key($_GET['_wpnonce']), 'purge-entire-cache')) return;
 
-        $host   = wp_parse_url(home_url(), PHP_URL_HOST);
-        $prefix = $this->clp_varnish_cache_manager->get_cache_tag_prefix();
-
         try {
-            match (true) {
-                !empty($host) && !empty($prefix) => $this->clp_varnish_cache_manager->purge_host_and_tag($host, $prefix),
-                !empty($host)                    => $this->clp_varnish_cache_manager->purge_host($host),
-                !empty($prefix)                  => $this->clp_varnish_cache_manager->purge_tag($prefix),
-                default                          => null,
-            };
+            $this->clp_varnish_cache_manager->purge_everything();
             self::set_purge_notice('success', __('Varnish Cache has been purged.', 'clp-varnish-cache'));
         } catch (\Exception $e) {
             error_log(sprintf('CLP Varnish Cache: admin bar purge failed — %s', $e->getMessage()));

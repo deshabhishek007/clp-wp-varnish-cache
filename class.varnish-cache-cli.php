@@ -127,16 +127,7 @@ final class ClpVarnishCacheCLI {
     }
 
     private function purge_all(ClpVarnishCacheManager $manager): void {
-        $host   = wp_parse_url(home_url(), PHP_URL_HOST);
-        $prefix = $manager->get_cache_tag_prefix();
-
-        match (true) {
-            !empty($host) && !empty($prefix) => $manager->purge_host_and_tag($host, $prefix),
-            !empty($host)                    => $manager->purge_host($host),
-            !empty($prefix)                  => $manager->purge_tag($prefix),
-            default                          => null,
-        };
-
+        $manager->purge_everything();
         WP_CLI::success('Entire cache purged.');
     }
 

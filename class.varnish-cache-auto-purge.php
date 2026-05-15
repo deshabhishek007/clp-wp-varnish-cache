@@ -31,16 +31,7 @@ class ClpVarnishCacheAutoPurge {
         if (!$manager->is_enabled()) return;
 
         try {
-            $host   = wp_parse_url(home_url(), PHP_URL_HOST);
-            $prefix = $manager->get_cache_tag_prefix();
-
-            match (true) {
-                !empty($host) && !empty($prefix) => $manager->purge_host_and_tag($host, $prefix),
-                !empty($host)                    => $manager->purge_host($host),
-                !empty($prefix)                  => $manager->purge_tag($prefix),
-                default                          => null,
-            };
-
+            $manager->purge_everything();
             self::$purged = true;
         } catch (\Exception $e) {
             error_log(sprintf('CLP Varnish Cache: auto_purge failed — %s', $e->getMessage()));

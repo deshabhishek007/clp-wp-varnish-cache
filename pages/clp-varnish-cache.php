@@ -82,14 +82,7 @@ if (isset($_POST['action']) && 'purge-cache' === sanitize_text_field($_POST['act
 if (isset($_GET['action']) && 'purge-entire-cache' === sanitize_text_field($_GET['action'])) {
     check_admin_referer('clp-purge-entire-cache');
     try {
-        $prefix = $clp_cache_manager->get_cache_tag_prefix();
-        if (!empty($host) && !empty($prefix)) {
-            $clp_cache_manager->purge_host_and_tag($host, $prefix);
-        } elseif (!empty($host)) {
-            $clp_cache_manager->purge_host($host);
-        } elseif (!empty($prefix)) {
-            $clp_cache_manager->purge_tag($prefix);
-        }
+        $clp_cache_manager->purge_everything();
         ClpVarnishCacheAdmin::set_purge_notice('success', __('Varnish Cache has been purged.', 'clp-varnish-cache'));
     } catch (\Exception $e) {
         ClpVarnishCacheAdmin::set_purge_notice('error', $e->getMessage());

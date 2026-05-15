@@ -5,4 +5,5 @@ enum PurgeType: string {
     case Tag     = 'tag';
     case Url     = 'url';
     case HostTag = 'host+tag';
+    case All     = 'all';
 }

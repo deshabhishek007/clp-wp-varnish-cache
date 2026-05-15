@@ -168,6 +168,15 @@ class ClpVarnishCacheManager {
         $this->purge(['Host' => $host, 'X-Cache-Tags' => $tag], null, PurgeType::HostTag, "$host / $tag");
     }
 
+    public function purge_everything(): void {
+        $host    = wp_parse_url(home_url(), PHP_URL_HOST);
+        $headers = ['X-Purge-All' => 'true'];
+        if (!empty($host)) {
+            $headers['Host'] = $host;
+        }
+        $this->purge($headers, null, PurgeType::All, '*');
+    }
+
     public function purge_url(string $url): void {
         $parsed = parse_url($url);
 
