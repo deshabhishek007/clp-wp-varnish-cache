@@ -1,3 +1,11 @@
+1.1.5 Abhishek Deshpande <abhishek@whoisabhi.com> Thu, 15 May 2026 00:00:00
+- Apply WordPress Coding Standards (WPCS) across all PHP files
+- Add phpcs.xml with documented suppressions for intentional deviations
+- Fix wp_unslash() missing before sanitize_*() calls in settings page and admin handler
+- Fix json_encode() replaced with wp_json_encode()
+- Fix parse_url() replaced with wp_parse_url()
+- Add file, class, property, and method doc comments throughout
+
 1.1.4 Abhishek Deshpande <abhishek@whoisabhi.com> Thu, 15 May 2026 00:00:00
 - Fix full cache purge sending X-Purge-All: true instead of tag-only ban
 - Fix success notice not showing after Purge Cache and Save Settings actions
