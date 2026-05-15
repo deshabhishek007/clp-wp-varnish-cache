@@ -28,9 +28,9 @@ if (isset($_POST['action']) && 'save-settings' === sanitize_text_field($_POST['a
     $server               = $get_post_value('server');
     $cache_lifetime       = $get_post_value('cache-lifetime');
     $cache_tag_prefix     = $get_post_value('cache-tag-prefix');
-    $excluded_params      = array_map('trim', array_filter(explode(',', $get_post_value('excluded-params'))));
+    $excluded_params      = array_map(trim(...), array_filter(explode(',', $get_post_value('excluded-params'))));
     $excludes             = isset($_POST['excludes']) ? sanitize_textarea_field($_POST['excludes']) : '';
-    $excludes             = array_map('trim', array_filter(explode(PHP_EOL, $excludes)));
+    $excludes             = array_map(trim(...), array_filter(explode(PHP_EOL, $excludes)));
 
     $validationErrors = ClpVarnishCacheManager::validate_settings([
         'server'         => $server,
@@ -64,7 +64,7 @@ if (isset($_POST['action']) && 'save-settings' === sanitize_text_field($_POST['a
 // ── Purge Cache ────────────────────────────────────────────────────────────
 if (isset($_POST['action']) && 'purge-cache' === sanitize_text_field($_POST['action'])) {
     check_admin_referer('clp-purge-cache');
-    $purge_values = array_map('trim', array_filter(explode(',', $get_post_value('purge-value'))));
+    $purge_values = array_map(trim(...), array_filter(explode(',', $get_post_value('purge-value'))));
     if (!empty($purge_values)) {
         try {
             foreach ($purge_values as $purge_value) {

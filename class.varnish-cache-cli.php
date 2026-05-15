@@ -7,7 +7,7 @@ if (!defined('WP_CLI') || !WP_CLI) {
 /**
  * Manages Varnish Cache from the command line.
  */
-class ClpVarnishCacheCLI {
+final class ClpVarnishCacheCLI {
 
     /**
      * Purge the Varnish cache.
@@ -43,26 +43,12 @@ class ClpVarnishCacheCLI {
         $tag = \WP_CLI\Utils\get_flag_value($assoc_args, 'tag', '');
 
         try {
-            if ($all) {
-                $host   = wp_parse_url(home_url(), PHP_URL_HOST);
-                $prefix = $manager->get_cache_tag_prefix();
-                if (!empty($host) && !empty($prefix)) {
-                    $manager->purge_host_and_tag($host, $prefix);
-                } elseif (!empty($host)) {
-                    $manager->purge_host($host);
-                } elseif (!empty($prefix)) {
-                    $manager->purge_tag($prefix);
-                }
-                WP_CLI::success('Entire cache purged.');
-            } elseif (!empty($url)) {
-                $manager->purge_url($url);
-                WP_CLI::success(sprintf('Purged URL: %s', $url));
-            } elseif (!empty($tag)) {
-                $manager->purge_tag($tag);
-                WP_CLI::success(sprintf('Purged tag: %s', $tag));
-            } else {
-                WP_CLI::error('Specify --all, --url=<url>, or --tag=<tag>.');
-            }
+            match (true) {
+                (bool) $all        => $this->purge_all($manager),
+                !empty($url)       => $this->purge_url($manager, $url),
+                !empty($tag)       => $this->purge_tag($manager, $tag),
+                default            => WP_CLI::error('Specify --all, --url=<url>, or --tag=<tag>.'),
+            };
         } catch (\Exception $e) {
             WP_CLI::error($e->getMessage());
         }
@@ -78,10 +64,9 @@ class ClpVarnishCacheCLI {
      * @when after_wp_load
      */
     public function status(array $args, array $assoc_args): void {
-        $manager  = new ClpVarnishCacheManager();
-        $settings = $manager->get_cache_settings();
+        $manager = new ClpVarnishCacheManager();
 
-        if (empty($settings)) {
+        if (empty($manager->get_cache_settings())) {
             WP_CLI::error('Settings file not found. Configure Varnish Cache in CloudPanel first.');
         }
 
@@ -113,15 +98,16 @@ class ClpVarnishCacheCLI {
             return;
         }
 
-        $rows = array_map(static function (array $entry): array {
-            return [
+        $rows = array_map(
+            static fn (array $entry): array => [
                 'Time'    => $entry['time'],
                 'Type'    => $entry['type'],
                 'Target'  => $entry['target'],
                 'Status'  => $entry['success'] ? 'OK' : 'FAILED',
                 'Message' => $entry['message'],
-            ];
-        }, $entries);
+            ],
+            $entries
+        );
 
         \WP_CLI\Utils\format_items('table', $rows, ['Time', 'Type', 'Target', 'Status', 'Message']);
     }
@@ -138,6 +124,30 @@ class ClpVarnishCacheCLI {
     public function clear_log(array $args, array $assoc_args): void {
         ClpVarnishCacheLogger::clear();
         WP_CLI::success('Purge log cleared.');
+    }
+
+    private function purge_all(ClpVarnishCacheManager $manager): void {
+        $host   = wp_parse_url(home_url(), PHP_URL_HOST);
+        $prefix = $manager->get_cache_tag_prefix();
+
+        match (true) {
+            !empty($host) && !empty($prefix) => $manager->purge_host_and_tag($host, $prefix),
+            !empty($host)                    => $manager->purge_host($host),
+            !empty($prefix)                  => $manager->purge_tag($prefix),
+            default                          => null,
+        };
+
+        WP_CLI::success('Entire cache purged.');
+    }
+
+    private function purge_url(ClpVarnishCacheManager $manager, string $url): void {
+        $manager->purge_url($url);
+        WP_CLI::success(sprintf('Purged URL: %s', $url));
+    }
+
+    private function purge_tag(ClpVarnishCacheManager $manager, string $tag): void {
+        $manager->purge_tag($tag);
+        WP_CLI::success(sprintf('Purged tag: %s', $tag));
     }
 }
 

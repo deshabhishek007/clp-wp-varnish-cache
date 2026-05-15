@@ -2,7 +2,7 @@
 
 class ClpVarnishCacheAdmin {
 
-    private ClpVarnishCacheManager $clp_varnish_cache_manager;
+    private readonly ClpVarnishCacheManager $clp_varnish_cache_manager;
 
     public function __construct() {
         $this->clp_varnish_cache_manager = new ClpVarnishCacheManager();
@@ -10,13 +10,13 @@ class ClpVarnishCacheAdmin {
     }
 
     public function init(): void {
-        add_action('admin_init', [$this, 'check_entire_cache_purge'], 100);
-        add_action('admin_init', [$this, 'show_activation_notice']);
-        add_action('admin_bar_menu', [$this, 'add_adminbar'], 100);
-        add_action('admin_menu', [$this, 'add_admin_menu'], 100);
-        add_action('network_admin_menu', [$this, 'add_admin_menu'], 100);
-        add_action('admin_enqueue_scripts', [$this, 'enqueue_assets']);
-        add_action('wp_ajax_clp_varnish_test_connection', [$this, 'ajax_test_connection']);
+        add_action('admin_init',        $this->check_entire_cache_purge(...), 100);
+        add_action('admin_init',        $this->show_activation_notice(...));
+        add_action('admin_bar_menu',    $this->add_adminbar(...), 100);
+        add_action('admin_menu',        $this->add_admin_menu(...), 100);
+        add_action('network_admin_menu',$this->add_admin_menu(...), 100);
+        add_action('admin_enqueue_scripts', $this->enqueue_assets(...));
+        add_action('wp_ajax_clp_varnish_test_connection', $this->ajax_test_connection(...));
 
         new ClpVarnishCacheHealth($this->clp_varnish_cache_manager);
     }
@@ -25,43 +25,39 @@ class ClpVarnishCacheAdmin {
         if (!isset($_GET['clp-varnish-cache']) || 'purge-entire-cache' !== sanitize_text_field($_GET['clp-varnish-cache'])) {
             return;
         }
-        if (!current_user_can('manage_options')) {
-            return;
-        }
-        if (!isset($_GET['_wpnonce']) || !wp_verify_nonce(sanitize_key($_GET['_wpnonce']), 'purge-entire-cache')) {
-            return;
-        }
+        if (!current_user_can('manage_options')) return;
+        if (!isset($_GET['_wpnonce']) || !wp_verify_nonce(sanitize_key($_GET['_wpnonce']), 'purge-entire-cache')) return;
 
         $host   = wp_parse_url(home_url(), PHP_URL_HOST);
         $prefix = $this->clp_varnish_cache_manager->get_cache_tag_prefix();
+
         try {
-            if (!empty($host) && !empty($prefix)) {
-                $this->clp_varnish_cache_manager->purge_host_and_tag($host, $prefix);
-            } elseif (!empty($host)) {
-                $this->clp_varnish_cache_manager->purge_host($host);
-            } elseif (!empty($prefix)) {
-                $this->clp_varnish_cache_manager->purge_tag($prefix);
-            }
+            match (true) {
+                !empty($host) && !empty($prefix) => $this->clp_varnish_cache_manager->purge_host_and_tag($host, $prefix),
+                !empty($host)                    => $this->clp_varnish_cache_manager->purge_host($host),
+                !empty($prefix)                  => $this->clp_varnish_cache_manager->purge_tag($prefix),
+                default                          => null,
+            };
         } catch (\Exception $e) {
             error_log(sprintf('CLP Varnish Cache: admin bar purge failed — %s', $e->getMessage()));
         }
 
-        add_action('admin_notices', [$this, 'admin_entire_cache_purge']);
+        add_action('admin_notices', $this->admin_entire_cache_purge(...));
     }
 
     public function admin_entire_cache_purge(): void {
-        echo '<div id="noice" class="notice notice-success fade is-dismissible"><p><strong>' . esc_html__('Varnish Cache has been purged.', 'clp-varnish-cache') . '</strong></p></div>';
+        echo '<div id="noice" class="notice notice-success fade is-dismissible"><p><strong>'
+            . esc_html__('Varnish Cache has been purged.', 'clp-varnish-cache')
+            . '</strong></p></div>';
     }
 
     public function show_activation_notice(): void {
-        if (!get_transient('clp_varnish_activation_notice')) {
-            return;
-        }
+        if (!get_transient('clp_varnish_activation_notice')) return;
         delete_transient('clp_varnish_activation_notice');
         add_action('admin_notices', static function (): void {
-            echo '<div class="notice notice-warning is-dismissible"><p><strong>' .
-                esc_html__('CLP Varnish Cache: settings file not found. Please configure Varnish Cache in CloudPanel first.', 'clp-varnish-cache') .
-                '</strong></p></div>';
+            echo '<div class="notice notice-warning is-dismissible"><p><strong>'
+                . esc_html__('CLP Varnish Cache: settings file not found. Please configure Varnish Cache in CloudPanel first.', 'clp-varnish-cache')
+                . '</strong></p></div>';
         });
     }
 
@@ -76,23 +72,24 @@ class ClpVarnishCacheAdmin {
             wp_send_json_error(['message' => __('Server address is required.', 'clp-varnish-cache')]);
         }
 
-        $validation_errors = ClpVarnishCacheManager::validate_settings([
-            'server'         => $server,
-            'cacheLifetime'  => '86400',
-            'cacheTagPrefix' => 'test',
-        ]);
-        // Only care about server-specific errors
-        $server_errors = array_filter($validation_errors, static fn (string $e): bool => str_contains($e, 'Server'));
+        $server_errors = array_filter(
+            ClpVarnishCacheManager::validate_settings([
+                'server'         => $server,
+                'cacheLifetime'  => '86400',
+                'cacheTagPrefix' => 'test',
+            ]),
+            static fn (string $e): bool => str_contains($e, 'Server')
+        );
+
         if (!empty($server_errors)) {
             wp_send_json_error(['message' => reset($server_errors)]);
         }
 
         $result = $this->clp_varnish_cache_manager->test_connection($server);
-        if (true === $result) {
-            wp_send_json_success(['message' => __('Connection successful — Varnish responded with HTTP 200.', 'clp-varnish-cache')]);
-        } else {
-            wp_send_json_error(['message' => $result]);
-        }
+        match (true) {
+            true === $result => wp_send_json_success(['message' => __('Connection successful — Varnish responded with HTTP 200.', 'clp-varnish-cache')]),
+            default          => wp_send_json_error(['message' => $result]),
+        };
     }
 
     public function get_clp_cache_manager(): ClpVarnishCacheManager {
@@ -100,15 +97,9 @@ class ClpVarnishCacheAdmin {
     }
 
     public function add_adminbar(\WP_Admin_Bar $adminbar): void {
-        if (!is_admin() || !current_user_can('manage_options')) {
-            return;
-        }
-        $varnish_cache_settings = $this->clp_varnish_cache_manager->get_cache_settings();
-        if (empty($varnish_cache_settings)) {
-            return;
-        }
+        if (!is_admin() || !current_user_can('manage_options')) return;
+        if (empty($this->clp_varnish_cache_manager->get_cache_settings())) return;
 
-        $menu_title   = __('CLP Varnish Cache', 'clp-varnish-cache');
         $is_network   = is_multisite() && is_network_admin();
         $settings_url = $is_network
             ? network_admin_url('settings.php?page=clp-varnish-cache')
@@ -117,78 +108,59 @@ class ClpVarnishCacheAdmin {
         $nodes = [
             [
                 'id'    => 'clp-varnish-cache',
-                'title' => '<span class="ab-icon" style="background-image: url(' . self::get_svg_icon() . ') !important;"></span><span class="ab-label">' . $menu_title . '</span>',
+                'title' => '<span class="ab-icon" style="background-image: url(' . self::get_svg_icon() . ') !important;"></span>'
+                         . '<span class="ab-label">' . __('CLP Varnish Cache', 'clp-varnish-cache') . '</span>',
                 'meta'  => ['class' => 'clp-varnish-cache'],
             ],
-            [
-                'parent' => 'clp-varnish-cache',
-                'id'     => 'clp-varnish-cache-purge',
-                'title'  => __('Purge', 'clp-varnish-cache'),
-                'meta'   => ['tabindex' => '0'],
-            ],
-            [
-                'parent' => 'clp-varnish-cache-purge',
-                'id'     => 'clp-varnish-cache-purge-entire-cache',
-                'title'  => __('Entire Cache', 'clp-varnish-cache'),
-                'href'   => wp_nonce_url(add_query_arg('clp-varnish-cache', 'purge-entire-cache'), 'purge-entire-cache'),
-                'meta'   => ['title' => __('Entire Cache', 'clp-varnish-cache')],
-            ],
-            [
-                'parent' => 'clp-varnish-cache-purge',
-                'id'     => 'clp-varnish-cache-purge-tags-urls',
-                'title'  => __('Cache Tags and Urls', 'clp-varnish-cache'),
-                'href'   => $settings_url,
-                'meta'   => ['title' => __('Cache Tags and Urls', 'clp-varnish-cache')],
-            ],
-            [
-                'parent' => 'clp-varnish-cache',
-                'id'     => 'clp-varnish-cache-enable',
-                'title'  => __('Settings', 'clp-varnish-cache'),
-                'href'   => $settings_url,
-                'meta'   => ['tabindex' => '0'],
-            ],
+            ['parent' => 'clp-varnish-cache', 'id' => 'clp-varnish-cache-purge',
+             'title'  => __('Purge', 'clp-varnish-cache'), 'meta' => ['tabindex' => '0']],
+            ['parent' => 'clp-varnish-cache-purge', 'id' => 'clp-varnish-cache-purge-entire-cache',
+             'title'  => __('Entire Cache', 'clp-varnish-cache'),
+             'href'   => wp_nonce_url(add_query_arg('clp-varnish-cache', 'purge-entire-cache'), 'purge-entire-cache'),
+             'meta'   => ['title' => __('Entire Cache', 'clp-varnish-cache')]],
+            ['parent' => 'clp-varnish-cache-purge', 'id' => 'clp-varnish-cache-purge-tags-urls',
+             'title'  => __('Cache Tags and Urls', 'clp-varnish-cache'),
+             'href'   => $settings_url, 'meta' => ['title' => __('Cache Tags and Urls', 'clp-varnish-cache')]],
+            ['parent' => 'clp-varnish-cache', 'id' => 'clp-varnish-cache-enable',
+             'title'  => __('Settings', 'clp-varnish-cache'),
+             'href'   => $settings_url, 'meta' => ['tabindex' => '0']],
         ];
 
-        foreach ($nodes as $node) {
-            $adminbar->add_node($node);
-        }
+        array_walk($nodes, $adminbar->add_node(...));
     }
 
     public function add_admin_menu(): void {
         $is_network = is_multisite() && is_network_admin();
         add_submenu_page(
-            $is_network ? 'settings.php' : 'options-general.php',
-            __('CLP Varnish Cache', 'clp-varnish-cache'),
-            __('CLP Varnish Cache', 'clp-varnish-cache'),
-            'manage_options',
-            'clp-varnish-cache',
-            [$this, 'clp_varnish_cache_page']
+            parent_slug: $is_network ? 'settings.php' : 'options-general.php',
+            page_title:  __('CLP Varnish Cache', 'clp-varnish-cache'),
+            menu_title:  __('CLP Varnish Cache', 'clp-varnish-cache'),
+            capability:  'manage_options',
+            menu_slug:   'clp-varnish-cache',
+            callback:    $this->clp_varnish_cache_page(...)
         );
     }
 
     public function clp_varnish_cache_page(): void {
-        $varnish_cache_page_path = sprintf('%s/pages/clp-varnish-cache.php', rtrim(plugin_dir_path(__FILE__), '/'));
-        include $varnish_cache_page_path;
+        include sprintf('%s/pages/clp-varnish-cache.php', rtrim(plugin_dir_path(__FILE__), '/'));
     }
 
     public function enqueue_assets(string $hook): void {
-        // Style: all admin pages with admin bar
         if (is_user_logged_in() && is_admin_bar_showing()) {
             wp_register_style('clp-varnish-cache', plugins_url('style.css', __FILE__), [], CLP_VARNISH_VERSION);
             wp_enqueue_style('clp-varnish-cache');
         }
 
-        // JS: only on the plugin settings page
-        if (!in_array($hook, ['settings_page_clp-varnish-cache', 'network_page_clp-varnish-cache'], true)) {
+        if (!in_array($hook, ['settings_page_clp-varnish-cache', 'network_page_clp-varnish-cache'], strict: true)) {
             return;
         }
 
         wp_enqueue_script(
-            'clp-varnish-cache-admin',
-            plugins_url('js/admin.js', __FILE__),
-            ['jquery'],
-            CLP_VARNISH_VERSION,
-            true
+            handle:   'clp-varnish-cache-admin',
+            src:      plugins_url('js/admin.js', __FILE__),
+            deps:     ['jquery'],
+            ver:      CLP_VARNISH_VERSION,
+            in_footer: true
         );
         wp_localize_script('clp-varnish-cache-admin', 'clpVarnish', [
             'nonce'         => wp_create_nonce('clp-test-connection'),

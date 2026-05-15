@@ -6,7 +6,7 @@
  * Text Domain: clp-varnish-cache
  * Domain Path: /languages
  * Requires at least: 6.0
- * Requires PHP: 8.0
+ * Requires PHP: 8.2
  * Author: cloudpanel.io
  * Author URI: https://www.cloudpanel.io
  * GitHub Plugin URI: https://github.com/cloudpanel-io/clp-wp-varnish-cache
@@ -21,6 +21,7 @@ if (false === function_exists('add_action')) {
 define('CLP_VARNISH_VERSION', '1.1.0');
 define('CLP_VARNISH_PLUGIN_DIR', plugin_dir_path(__FILE__));
 
+require_once CLP_VARNISH_PLUGIN_DIR . 'enum-purge-type.php';
 require_once CLP_VARNISH_PLUGIN_DIR . 'class.varnish-cache-logger.php';
 require_once CLP_VARNISH_PLUGIN_DIR . 'class.varnish-cache-manager.php';
 require_once CLP_VARNISH_PLUGIN_DIR . 'class.varnish-cache-auto-purge.php';
