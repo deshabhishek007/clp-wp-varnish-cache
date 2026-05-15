@@ -90,10 +90,12 @@ if (isset($_GET['action']) && 'purge-entire-cache' === sanitize_text_field($_GET
         } elseif (!empty($prefix)) {
             $clp_cache_manager->purge_tag($prefix);
         }
-        $successNotice = __('Varnish Cache has been purged.', 'clp-varnish-cache');
+        ClpVarnishCacheAdmin::set_purge_notice('success', __('Varnish Cache has been purged.', 'clp-varnish-cache'));
     } catch (\Exception $e) {
-        $errorNotice = $e->getMessage();
+        ClpVarnishCacheAdmin::set_purge_notice('error', $e->getMessage());
     }
+    wp_safe_redirect(remove_query_arg(['action', '_wpnonce']));
+    exit();
 }
 
 $clp_cache_settings    = $clp_cache_manager->get_cache_settings();

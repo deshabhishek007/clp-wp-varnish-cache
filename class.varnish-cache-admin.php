@@ -12,6 +12,8 @@ class ClpVarnishCacheAdmin {
     public function init(): void {
         add_action('admin_init',        $this->check_entire_cache_purge(...), 100);
         add_action('admin_init',        $this->show_activation_notice(...));
+        add_action('admin_notices',     $this->show_purge_notice(...));
+        add_action('network_admin_notices', $this->show_purge_notice(...));
         add_action('admin_bar_menu',    $this->add_adminbar(...), 100);
         add_action('admin_menu',        $this->add_admin_menu(...), 100);
         add_action('network_admin_menu',$this->add_admin_menu(...), 100);
@@ -38,15 +40,28 @@ class ClpVarnishCacheAdmin {
                 !empty($prefix)                  => $this->clp_varnish_cache_manager->purge_tag($prefix),
                 default                          => null,
             };
-            add_action('admin_notices', $this->admin_entire_cache_purge(...));
+            self::set_purge_notice('success', __('Varnish Cache has been purged.', 'clp-varnish-cache'));
         } catch (\Exception $e) {
             error_log(sprintf('CLP Varnish Cache: admin bar purge failed — %s', $e->getMessage()));
+            self::set_purge_notice('error', $e->getMessage());
         }
+
+        wp_safe_redirect(remove_query_arg(['clp-varnish-cache', '_wpnonce']));
+        exit();
     }
 
-    public function admin_entire_cache_purge(): void {
-        echo '<div id="notice" class="notice notice-success fade is-dismissible"><p><strong>'
-            . esc_html__('Varnish Cache has been purged.', 'clp-varnish-cache')
+    public static function set_purge_notice(string $type, string $message): void {
+        set_transient('clp_varnish_purge_notice_' . get_current_user_id(), compact('type', 'message'), 60);
+    }
+
+    public function show_purge_notice(): void {
+        $notice = get_transient('clp_varnish_purge_notice_' . get_current_user_id());
+        if (empty($notice)) return;
+        delete_transient('clp_varnish_purge_notice_' . get_current_user_id());
+
+        $class = 'success' === $notice['type'] ? 'notice-success' : 'notice-error';
+        echo '<div class="notice ' . esc_attr($class) . ' is-dismissible"><p><strong>'
+            . esc_html($notice['message'])
             . '</strong></p></div>';
     }
 
