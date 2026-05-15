@@ -5,17 +5,18 @@ if (!current_user_can('manage_options')) {
 }
 
 global $clp_varnish_cache_admin;
-$is_network      = is_multisite() && is_network_admin();
-$successNotice   = null;
-$errorNotice     = null;
-$validationErrors = [];
-$host            = wp_parse_url(home_url(), PHP_URL_HOST);
+$is_network = is_multisite() && is_network_admin();
+$host       = wp_parse_url(home_url(), PHP_URL_HOST);
 
 $get_post_value = static function (string $key): string {
     return isset($_POST[$key]) ? sanitize_text_field($_POST[$key]) : '';
 };
 
 $clp_cache_manager = $clp_varnish_cache_admin->get_clp_cache_manager();
+
+$settings_url = $is_network
+    ? network_admin_url('settings.php?page=clp-varnish-cache')
+    : admin_url('options-general.php?page=clp-varnish-cache');
 
 // ── Save Settings ──────────────────────────────────────────────────────────
 if (isset($_POST['action']) && 'save-settings' === sanitize_text_field($_POST['action'])) {
@@ -52,11 +53,14 @@ if (isset($_POST['action']) && 'save-settings' === sanitize_text_field($_POST['a
                 if (!empty($old_cache_tag_prefix)) $clp_cache_manager->purge_tag($old_cache_tag_prefix);
                 if (!empty($host)) $clp_cache_manager->purge_host($host);
             }
-            $successNotice = __('Settings have been saved.', 'clp-varnish-cache');
+            ClpVarnishCacheAdmin::set_purge_notice('success', __('Settings have been saved.', 'clp-varnish-cache'));
         } catch (\Exception $e) {
-            $errorNotice = $e->getMessage();
+            ClpVarnishCacheAdmin::set_purge_notice('error', $e->getMessage());
         }
+        wp_safe_redirect($settings_url);
+        exit();
     }
+    // Validation errors fall through so the form re-renders with inline errors.
 }
 
 // ── Purge Cache ────────────────────────────────────────────────────────────
@@ -71,11 +75,13 @@ if (isset($_POST['action']) && 'purge-cache' === sanitize_text_field($_POST['act
                     ? $clp_cache_manager->purge_url($purge_value)
                     : $clp_cache_manager->purge_tag($purge_value);
             }
-            $successNotice = __('Varnish Cache has been purged.', 'clp-varnish-cache');
+            ClpVarnishCacheAdmin::set_purge_notice('success', __('Varnish Cache has been purged.', 'clp-varnish-cache'));
         } catch (\Exception $e) {
-            $errorNotice = $e->getMessage();
+            ClpVarnishCacheAdmin::set_purge_notice('error', $e->getMessage());
         }
     }
+    wp_safe_redirect($settings_url);
+    exit();
 }
 
 // ── Purge Entire Cache (GET) ───────────────────────────────────────────────
@@ -91,6 +97,15 @@ if (isset($_GET['action']) && 'purge-entire-cache' === sanitize_text_field($_GET
     exit();
 }
 
+// ── Clear Log (POST) ───────────────────────────────────────────────────────
+if (isset($_POST['action']) && 'clear-log' === sanitize_text_field($_POST['action'])) {
+    check_admin_referer('clp-clear-log');
+    ClpVarnishCacheLogger::clear();
+    ClpVarnishCacheAdmin::set_purge_notice('success', __('Purge log has been cleared.', 'clp-varnish-cache'));
+    wp_safe_redirect($settings_url);
+    exit();
+}
+
 $clp_cache_settings    = $clp_cache_manager->get_cache_settings();
 $is_enabled            = $clp_cache_manager->is_enabled();
 $server                = $clp_cache_manager->get_server();
@@ -99,9 +114,6 @@ $cache_tag_prefix      = $clp_cache_manager->get_cache_tag_prefix();
 $excluded_params       = $clp_cache_manager->get_excluded_params();
 $excludes              = $clp_cache_manager->get_excludes();
 
-$settings_url          = $is_network
-    ? network_admin_url('settings.php?page=clp-varnish-cache')
-    : admin_url('options-general.php?page=clp-varnish-cache');
 $purge_entire_cache_url = wp_nonce_url(
     add_query_arg('action', 'purge-entire-cache', $settings_url),
     'clp-purge-entire-cache'
@@ -114,20 +126,8 @@ $purge_log             = ClpVarnishCacheLogger::get_log();
 <div class="clp-varnish-cache-container">
   <?php if (!empty($clp_cache_settings)): ?>
 
-    <?php if (!is_null($successNotice)): ?>
-      <div id="notice" class="notice notice-success fade is-dismissible">
-        <p><strong><?php echo esc_html($successNotice); ?></strong></p>
-      </div>
-    <?php endif; ?>
-
-    <?php if (!is_null($errorNotice)): ?>
-      <div id="notice" class="notice notice-error fade is-dismissible">
-        <p><strong><?php echo esc_html($errorNotice); ?></strong></p>
-      </div>
-    <?php endif; ?>
-
     <?php if (!empty($validationErrors)): ?>
-      <div id="notice" class="notice notice-error fade is-dismissible">
+      <div class="notice notice-error fade is-dismissible">
         <ul>
           <?php foreach ($validationErrors as $err): ?>
             <li><strong><?php echo esc_html($err); ?></strong></li>
@@ -233,6 +233,13 @@ $purge_log             = ClpVarnishCacheLogger::get_log();
       <div class="clp-varnish-cache-block">
         <div class="clp-varnish-cache-block-header">
           <h3><?php esc_html_e('Purge History', 'clp-varnish-cache'); ?></h3>
+          <form method="post" action="<?php echo esc_url($settings_url); ?>">
+            <?php wp_nonce_field('clp-clear-log'); ?>
+            <input type="hidden" name="action" value="clear-log" />
+            <button type="submit" class="button">
+              <?php esc_html_e('Clear Log', 'clp-varnish-cache'); ?>
+            </button>
+          </form>
         </div>
         <div class="clp-varnish-cache-block-content">
           <table class="wp-list-table widefat fixed striped">
@@ -265,10 +272,9 @@ $purge_log             = ClpVarnishCacheLogger::get_log();
           </table>
           <p class="description" style="margin-top:8px;">
             <?php printf(
-                /* translators: %d: number of entries */
-                esc_html__('Showing last %d purge operations. Use WP-CLI %s to clear.', 'clp-varnish-cache'),
-                count($purge_log),
-                '<code>wp varnish clear-log</code>'
+                /* translators: %d: number of log entries shown */
+                esc_html__('Showing last %d purge operations.', 'clp-varnish-cache'),
+                count($purge_log)
             ); ?>
           </p>
         </div>
