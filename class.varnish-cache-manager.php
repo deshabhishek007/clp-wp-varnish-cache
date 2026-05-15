@@ -45,7 +45,7 @@ class ClpVarnishCacheManager {
             return $this->cache_settings;
         }
 
-        $cached = wp_cache_get(key: 'clp_varnish_settings', group: 'clp_varnish');
+        $cached = wp_cache_get('clp_varnish_settings', 'clp_varnish');
         if (false !== $cached) {
             $this->cache_settings = (array) $cached;
             return $this->cache_settings;
@@ -58,7 +58,7 @@ class ClpVarnishCacheManager {
                 error_log(sprintf('CLP Varnish Cache: failed to parse settings.json — %s', json_last_error_msg()));
             } elseif (!empty($cache_settings)) {
                 $this->cache_settings = $cache_settings;
-                wp_cache_set(key: 'clp_varnish_settings', data: $cache_settings, group: 'clp_varnish');
+                wp_cache_set('clp_varnish_settings', $cache_settings, 'clp_varnish');
             }
         }
 
@@ -72,12 +72,12 @@ class ClpVarnishCacheManager {
                 sprintf('CLP Varnish Cache: failed to write settings to %s', $this->settings_file)
             );
         }
-        wp_cache_delete(key: 'clp_varnish_settings', group: 'clp_varnish');
+        wp_cache_delete('clp_varnish_settings', 'clp_varnish');
     }
 
     public function reset_cache_settings(): void {
         $this->cache_settings = [];
-        wp_cache_delete(key: 'clp_varnish_settings', group: 'clp_varnish');
+        wp_cache_delete('clp_varnish_settings', 'clp_varnish');
     }
 
     /**
@@ -131,8 +131,8 @@ class ClpVarnishCacheManager {
         }
 
         $response = wp_remote_request(
-            url: 'http://' . preg_replace('#^https?://#', '', $server),
-            args: [
+            'http://' . preg_replace('#^https?://#', '', $server),
+            [
                 'method'    => 'PURGE',
                 'timeout'   => 3,
                 'sslverify' => false,
@@ -152,7 +152,7 @@ class ClpVarnishCacheManager {
     }
 
     public function purge_host(string $host): void {
-        $this->purge(headers: ['Host' => $host], request_url: null, type: PurgeType::Host, target: $host);
+        $this->purge(['Host' => $host], null, PurgeType::Host, $host);
     }
 
     public function purge_tag(string $tag): void {
@@ -161,16 +161,11 @@ class ClpVarnishCacheManager {
 
     public function purge_tags(array $tags): void {
         $target = implode(',', $tags);
-        $this->purge(headers: ['X-Cache-Tags' => $target], request_url: null, type: PurgeType::Tag, target: $target);
+        $this->purge(['X-Cache-Tags' => $target], null, PurgeType::Tag, $target);
     }
 
     public function purge_host_and_tag(string $host, string $tag): void {
-        $this->purge(
-            headers:     ['Host' => $host, 'X-Cache-Tags' => $tag],
-            request_url: null,
-            type:        PurgeType::HostTag,
-            target:      "$host / $tag"
-        );
+        $this->purge(['Host' => $host, 'X-Cache-Tags' => $tag], null, PurgeType::HostTag, "$host / $tag");
     }
 
     public function purge_url(string $url): void {
@@ -198,14 +193,14 @@ class ClpVarnishCacheManager {
             }
         }
 
-        $this->purge(headers: ['Host' => $parsed['host']], request_url: $request_url, type: PurgeType::Url, target: $url);
+        $this->purge(['Host' => $parsed['host']], $request_url, PurgeType::Url, $url);
     }
 
     private function purge(array $headers, ?string $request_url, PurgeType $type, string $target): void {
         $url      = 'http://' . preg_replace('#^https?://#', '', $request_url ?? $this->get_server());
         $response = wp_remote_request(
-            url: $url,
-            args: [
+            $url,
+            [
                 'method'    => 'PURGE',
                 'timeout'   => 2,
                 'sslverify' => false,
