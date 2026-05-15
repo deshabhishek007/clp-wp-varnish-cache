@@ -54,6 +54,19 @@ class ClpVarnishCacheAutoPurge {
         $manager = new ClpVarnishCacheManager();
         if (!$manager->is_enabled()) return;
 
+        // Tag-based purge for the post itself — matches VCL ban rules that use
+        // X-Cache-Tags: {prefix}-post-{ID} (same format as the original CLP plugin).
+        $prefix = $manager->get_cache_tag_prefix();
+        if (!empty($prefix)) {
+            try {
+                $manager->purge_tag($prefix . '-post-' . $post_id);
+            } catch (\Exception $e) {
+                error_log(sprintf('CLP Varnish Cache: failed to purge tag for post %d — %s', $post_id, $e->getMessage()));
+            }
+        }
+
+        // URL-based purges for surrounding pages (homepage, feed, taxonomy archives,
+        // author page) that don't have per-post cache tags.
         /** @var string[] $urls */
         $urls = apply_filters('clp_varnish_purge_urls', $this->get_purge_urls_for_post($post_id), $post_id, get_post($post_id));
 
