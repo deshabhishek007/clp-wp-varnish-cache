@@ -1,2 +1,6 @@
 <?php
-# Silence is golden (-:
+/**
+ * Silence is golden.
+ *
+ * @package CLP_Varnish_Cache
+ */

@@ -1,0 +1,80 @@
+<?xml version="1.0"?>
+<ruleset name="CLP Varnish Cache">
+	<description>WordPress Coding Standards for the CLP Varnish Cache plugin.</description>
+
+	<arg name="extensions" value="php"/>
+	<arg name="colors"/>
+
+	<rule ref="WordPress"/>
+
+	<!--
+		Plugin files use dot-separated names (class.varnish-cache-*.php) by convention.
+		Renaming them would break every require_once call in the main plugin file.
+	-->
+	<rule ref="WordPress.Files.FileName">
+		<exclude-pattern>*</exclude-pattern>
+	</rule>
+
+	<!--
+		error_log() is used intentionally in catch blocks to surface server-side
+		failures without interrupting the user-facing request flow.
+	-->
+	<rule ref="WordPress.PHP.DevelopmentFunctions.error_log_error_log">
+		<exclude-pattern>*</exclude-pattern>
+	</rule>
+
+	<!--
+		file_get_contents reads a local settings.json file, not a remote URL;
+		the WP_Filesystem sniff does not apply here.
+	-->
+	<rule ref="WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents">
+		<exclude-pattern>*/class.varnish-cache-manager.php</exclude-pattern>
+	</rule>
+
+	<!--
+		file_put_contents writes to a local settings.json file, not a remote endpoint;
+		the WP_Filesystem sniff does not apply here.
+	-->
+	<rule ref="WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents">
+		<exclude-pattern>*/class.varnish-cache-manager.php</exclude-pattern>
+	</rule>
+
+	<!-- base64_encode is used only to inline the SVG admin-bar icon as a data URI. -->
+	<rule ref="WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode">
+		<exclude-pattern>*/class.varnish-cache-admin.php</exclude-pattern>
+	</rule>
+
+	<!--
+		Exception message strings in class.varnish-cache-manager.php are internal
+		error descriptions, never HTML output — the escaping sniff is a false positive here.
+	-->
+	<rule ref="WordPress.Security.EscapeOutput.ExceptionNotEscaped">
+		<exclude-pattern>*/class.varnish-cache-manager.php</exclude-pattern>
+	</rule>
+
+	<!--
+		The IPv6 comment (e.g. // IPv6: [::1] or [::1]:6081) contains brackets that
+		trigger the "looks like commented-out code" heuristic; it is a genuine comment.
+	-->
+	<rule ref="Squiz.PHP.CommentedOutCode.Found">
+		<exclude-pattern>*/class.varnish-cache-manager.php</exclude-pattern>
+	</rule>
+
+	<!--
+		WP-CLI command methods MUST declare (array $args, array $assoc_args) in their
+		signatures regardless of whether those variables are used internally.
+	-->
+	<rule ref="Generic.CodeAnalysis.UnusedFunctionParameter.FoundAfterLastUsed">
+		<exclude-pattern>*/class.varnish-cache-cli.php</exclude-pattern>
+	</rule>
+
+	<!--
+		set_purge_notice() uses $type and $message via compact(), which PHPCS cannot
+		detect statically. purge_woo_product_by_id() intentionally ignores its second
+		parameter (hook signature requirement, prefixed with _).
+	-->
+	<rule ref="Generic.CodeAnalysis.UnusedFunctionParameter">
+		<exclude-pattern>*/class.varnish-cache-admin.php</exclude-pattern>
+		<exclude-pattern>*/class.varnish-cache-auto-purge.php</exclude-pattern>
+	</rule>
+</ruleset>
