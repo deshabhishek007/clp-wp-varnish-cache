@@ -1,3 +1,12 @@
+1.1.2 Abhishek Deshpande <abhishek@whoisabhi.com> Thu, 15 May 2026 00:00:00
+- Security hardening, performance improvements, and bug fixes
+- Replace named parameters on WordPress functions with positional arguments
+- Fix false success notice shown on admin-bar purge failure
+- Accept HTTP 204 as valid Varnish PURGE response
+- Add IPv6 server address support
+- Switch comment hook to transition_comment_status (covers all comment types)
+- Overhaul release process with CI/CD pipeline and version consistency checks
+
 1.1.0 Stefan Wieczorek <stefan.wieczorek@cloudpanel.io> Tue, 17 Mar 2026 08:08:08
 - #18 Automatically purge cache after plugin/theme updates: (Thanks to 7heMech)
   • Core upgrade
