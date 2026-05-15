@@ -1,3 +1,9 @@
+1.1.3 Abhishek Deshpande <abhishek@whoisabhi.com> Thu, 15 May 2026 00:00:00
+- Fix post purge not invalidating article pages on tag-based VCL configurations
+- Add X-Cache-Tags: {prefix}-post-{ID} purge signal on save_post (matches original CLP plugin behaviour)
+- Fix missing success notice on Purge Entire Cache (Post-Redirect-Get pattern)
+- Fix named parameters on WordPress functions causing fatal errors
+
 1.1.2 Abhishek Deshpande <abhishek@whoisabhi.com> Thu, 15 May 2026 00:00:00
 - Security hardening, performance improvements, and bug fixes
 - Replace named parameters on WordPress functions with positional arguments
