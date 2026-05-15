@@ -12,9 +12,7 @@ $validationErrors = [];
 $host            = wp_parse_url(home_url(), PHP_URL_HOST);
 
 $get_post_value = static function (string $key): string {
-    return (isset($_POST[$key]) && !empty(sanitize_text_field($_POST[$key])))
-        ? sanitize_text_field($_POST[$key])
-        : '';
+    return isset($_POST[$key]) ? sanitize_text_field($_POST[$key]) : '';
 };
 
 $clp_cache_manager = $clp_varnish_cache_admin->get_clp_cache_manager();

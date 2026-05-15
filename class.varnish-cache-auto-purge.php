@@ -12,7 +12,7 @@ class ClpVarnishCacheAutoPurge {
 
         add_action('save_post',                        $this->purge_post(...), 100);
         add_action('delete_post',                      $this->purge_post(...), 100);
-        add_action('comment_approved_comment',         $this->purge_post_from_comment(...), 100);
+        add_action('transition_comment_status',        $this->purge_post_from_comment_transition(...), 100, 3);
 
         add_action('woocommerce_product_set_stock',        $this->purge_woo_product(...), 100);
         add_action('woocommerce_variation_set_stock',      $this->purge_woo_product(...), 100);
@@ -66,8 +66,9 @@ class ClpVarnishCacheAutoPurge {
         }
     }
 
-    public function purge_post_from_comment(mixed $comment): void {
-        $post_id = (int) (is_object($comment) ? $comment->comment_post_ID : $comment);
+    public function purge_post_from_comment_transition(string $new_status, string $old_status, \WP_Comment $comment): void {
+        if ('approved' !== $new_status && 'approved' !== $old_status) return;
+        $post_id = (int) $comment->comment_post_ID;
         if ($post_id > 0) {
             $this->purge_post($post_id);
         }
@@ -79,7 +80,7 @@ class ClpVarnishCacheAutoPurge {
         }
     }
 
-    public function purge_woo_product_by_id(int $product_id, string $stock_status): void {
+    public function purge_woo_product_by_id(int $product_id, string $_stock_status): void {
         $this->purge_post($product_id);
     }
 

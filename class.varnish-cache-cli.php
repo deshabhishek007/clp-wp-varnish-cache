@@ -44,10 +44,10 @@ final class ClpVarnishCacheCLI {
 
         try {
             match (true) {
-                (bool) $all        => $this->purge_all($manager),
-                !empty($url)       => $this->purge_url($manager, $url),
-                !empty($tag)       => $this->purge_tag($manager, $tag),
-                default            => WP_CLI::error('Specify --all, --url=<url>, or --tag=<tag>.'),
+                (bool) $all  => $this->purge_all($manager),
+                !empty($url) => $this->purge_url($manager, $url),
+                !empty($tag) => $this->purge_tag($manager, $tag),
+                default      => throw new \InvalidArgumentException('Specify --all, --url=<url>, or --tag=<tag>.'),
             };
         } catch (\Exception $e) {
             WP_CLI::error($e->getMessage());

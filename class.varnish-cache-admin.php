@@ -38,15 +38,14 @@ class ClpVarnishCacheAdmin {
                 !empty($prefix)                  => $this->clp_varnish_cache_manager->purge_tag($prefix),
                 default                          => null,
             };
+            add_action('admin_notices', $this->admin_entire_cache_purge(...));
         } catch (\Exception $e) {
             error_log(sprintf('CLP Varnish Cache: admin bar purge failed — %s', $e->getMessage()));
         }
-
-        add_action('admin_notices', $this->admin_entire_cache_purge(...));
     }
 
     public function admin_entire_cache_purge(): void {
-        echo '<div id="noice" class="notice notice-success fade is-dismissible"><p><strong>'
+        echo '<div id="notice" class="notice notice-success fade is-dismissible"><p><strong>'
             . esc_html__('Varnish Cache has been purged.', 'clp-varnish-cache')
             . '</strong></p></div>';
     }

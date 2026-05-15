@@ -24,11 +24,13 @@
             server: server,
         })
         .done(function (response) {
+            var $span = $('<span>').text(response.data.message);
             if (response.success) {
-                $result.html('<span class="clp-test-success">&#10003; ' + response.data.message + '</span>');
+                $span.addClass('clp-test-success').prepend('✓ ');
             } else {
-                $result.html('<span class="clp-test-error">&#10007; ' + response.data.message + '</span>');
+                $span.addClass('clp-test-error').prepend('✗ ');
             }
+            $result.empty().append($span);
         })
         .fail(function () {
             $result.html('<span class="clp-test-error">' + clpVarnish.requestFailed + '</span>');

@@ -6,7 +6,11 @@ class ClpVarnishCacheManager {
     private array           $cache_settings = [];
 
     public function __construct() {
-        $this->settings_file = sprintf('%s/.varnish-cache/settings.json', rtrim(getenv('HOME'), '/'));
+        $home = getenv('HOME');
+        if (empty($home)) {
+            $home = posix_getpwuid(posix_getuid())['dir'] ?? '';
+        }
+        $this->settings_file = sprintf('%s/.varnish-cache/settings.json', rtrim((string) $home, '/'));
     }
 
     public function is_enabled(): bool {
@@ -85,8 +89,15 @@ class ClpVarnishCacheManager {
         $server = $settings['server'] ?? '';
         if (empty($server)) {
             $errors[] = __('Varnish Server is required.', 'clp-varnish-cache');
+        } elseif (preg_match('/^\[([^\]]+)\](?::(\d{1,5}))?$/', $server, $m)) {
+            // IPv6: [::1] or [::1]:6081
+            if (!filter_var($m[1], FILTER_VALIDATE_IP, FILTER_FLAG_IPV6)) {
+                $errors[] = __('Varnish Server contains an invalid IPv6 address.', 'clp-varnish-cache');
+            } elseif (isset($m[2]) && ((int) $m[2] < 1 || (int) $m[2] > 65535)) {
+                $errors[] = __('Varnish Server port must be between 1 and 65535.', 'clp-varnish-cache');
+            }
         } elseif (!preg_match('/^[a-zA-Z0-9.\-_]+(:\d{1,5})?$/', $server)) {
-            $errors[] = __('Varnish Server must be in hostname:port or IP:port format (e.g. 127.0.0.1:6081).', 'clp-varnish-cache');
+            $errors[] = __('Varnish Server must be in hostname:port, IP:port, or [IPv6]:port format (e.g. 127.0.0.1:6081).', 'clp-varnish-cache');
         } elseif (str_contains($server, ':')) {
             $port = (int) explode(':', $server, 2)[1];
             if ($port < 1 || $port > 65535) {
@@ -134,9 +145,9 @@ class ClpVarnishCacheManager {
         }
 
         $code = (int) wp_remote_retrieve_response_code($response);
-        return match ($code) {
-            200     => true,
-            default => sprintf(__('Unexpected HTTP %d response from Varnish server.', 'clp-varnish-cache'), $code),
+        return match (true) {
+            200 === $code, 204 === $code => true,
+            default                     => sprintf(__('Unexpected HTTP %d response from Varnish server.', 'clp-varnish-cache'), $code),
         };
     }
 
